@@ -149,17 +149,28 @@ pub struct CmgRuntime {
     module_dec_calls: usize,
 }
 
+use std::sync::OnceLock;
+
+static CMG_ENGINE_AND_MODULE: OnceLock<(Engine, wasmtime::Module)> = OnceLock::new();
+
+fn get_cmg_engine_and_module() -> Result<&'static (Engine, wasmtime::Module)> {
+    CMG_ENGINE_AND_MODULE.get_or_try_init(|| {
+        let engine = Engine::default();
+        let wasm = embedded_cmg_worker_wasm()?;
+        let module = wasmtime::Module::from_binary(&engine, &wasm)?;
+        Ok((engine, module))
+    })
+}
+
 impl CmgRuntime {
     pub fn load() -> Result<Self> {
         Self::load_for_page("https://www.yangshipin.cn/tv/home?pid=600099502")
     }
 
     pub fn load_for_page(page_url: &str) -> Result<Self> {
-        let engine = Engine::default();
-        let wasm = embedded_cmg_worker_wasm()?;
-        let module = wasmtime::Module::from_binary(&engine, &wasm)?;
+        let (engine, module) = get_cmg_engine_and_module()?;
         let mut store = Store::new(
-            &engine,
+            engine,
             CmgState {
                 memory: None,
                 table: None,
@@ -190,7 +201,7 @@ impl CmgRuntime {
             write_i32_le_raw(data, DYNAMICTOP_PTR, DYNAMIC_TOP_AFTER_RUNTIME_ALLOCS)?;
         }
 
-        let mut linker = Linker::new(&engine);
+        let mut linker = Linker::new(engine);
         linker.define(&mut store, "env", "memory", memory)?;
         linker.define(&mut store, "env", "table", table)?;
         let i32_global =
@@ -210,7 +221,7 @@ impl CmgRuntime {
         linker.define(&mut store, "env", "d", eb)?;
         define_imports(&mut linker)?;
 
-        let instance = linker.instantiate(&mut store, &module)?;
+        let instance = linker.instantiate(&mut store, module)?;
         {
             let data = memory.data_mut(&mut store);
             write_i32_le_raw(data, DYNAMICTOP_PTR, DYNAMIC_TOP_AFTER_RUNTIME_ALLOCS)?;
