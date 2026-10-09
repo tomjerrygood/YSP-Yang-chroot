@@ -10,11 +10,12 @@ use std::sync::OnceLock;
 
 static TICKET_ENGINE_AND_MODULE: OnceLock<(Engine, wasmtime::Module)> = OnceLock::new();
 
-fn get_ticket_engine_and_module() -> Result<&'static (Engine, wasmtime::Module)> {
-    TICKET_ENGINE_AND_MODULE.get_or_try_init(|| {
+fn get_ticket_engine_and_module() -> &'static (Engine, wasmtime::Module) {
+    TICKET_ENGINE_AND_MODULE.get_or_init(|| {
         let engine = Engine::default();
-        let module = wasmtime::Module::from_binary(&engine, TICKET_WASM)?;
-        Ok((engine, module))
+        let module = wasmtime::Module::from_binary(&engine, TICKET_WASM)
+            .expect("compile embedded ticket.wasm");
+        (engine, module)
     })
 }
 
@@ -36,7 +37,7 @@ struct TicketRuntime {
 
 impl TicketRuntime {
     fn load() -> Result<Self> {
-        let (engine, module) = get_ticket_engine_and_module()?;
+        let (engine, module) = get_ticket_engine_and_module();
         let mut store = Store::new(engine, TicketState { memory: None });
         let memory = Memory::new(&mut store, wasmtime::MemoryType::new(256, Some(256)))?;
         let table = Table::new(

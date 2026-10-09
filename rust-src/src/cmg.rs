@@ -153,12 +153,13 @@ use std::sync::OnceLock;
 
 static CMG_ENGINE_AND_MODULE: OnceLock<(Engine, wasmtime::Module)> = OnceLock::new();
 
-fn get_cmg_engine_and_module() -> Result<&'static (Engine, wasmtime::Module)> {
-    CMG_ENGINE_AND_MODULE.get_or_try_init(|| {
+fn get_cmg_engine_and_module() -> &'static (Engine, wasmtime::Module) {
+    CMG_ENGINE_AND_MODULE.get_or_init(|| {
         let engine = Engine::default();
-        let wasm = embedded_cmg_worker_wasm()?;
-        let module = wasmtime::Module::from_binary(&engine, &wasm)?;
-        Ok((engine, module))
+        let wasm = embedded_cmg_worker_wasm().expect("embedded cmg worker wasm");
+        let module = wasmtime::Module::from_binary(&engine, &wasm)
+            .expect("compile embedded cmg worker wasm");
+        (engine, module)
     })
 }
 
@@ -168,7 +169,7 @@ impl CmgRuntime {
     }
 
     pub fn load_for_page(page_url: &str) -> Result<Self> {
-        let (engine, module) = get_cmg_engine_and_module()?;
+        let (engine, module) = get_cmg_engine_and_module();
         let mut store = Store::new(
             engine,
             CmgState {
