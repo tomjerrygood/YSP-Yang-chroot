@@ -30,9 +30,9 @@ pub const MEDIA_PLAYLIST_WINDOW_SEGMENTS: usize = 12;
 pub const MEDIA_HISTORY_MAX_SEGMENTS: usize = 36;
 pub const MEDIA_LIVE_EDGE_HOLDBACK_SEGMENTS: usize = 1;
 
-pub const API_FLOW_CONCURRENCY: usize = 1;
-pub const API_FLOW_MIN_INTERVAL_MS: u64 = 900;
-pub const API_FLOW_JITTER_MS: u64 = 300;
+pub const API_FLOW_CONCURRENCY: usize = 3;
+pub const API_FLOW_MIN_INTERVAL_MS: u64 = 300;
+pub const API_FLOW_JITTER_MS: u64 = 100;
 pub const API_FLOW_QUEUE_TIMEOUT_MS: u64 = 600_000;
 pub const API_FLOW_RETRIES: usize = 2;
 pub const API_FLOW_RETRY_DELAY_MS: u64 = 2_500;

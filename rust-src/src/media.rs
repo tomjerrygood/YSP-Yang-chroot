@@ -172,6 +172,7 @@ impl MediaPipeline {
             "#EXT-X-INDEPENDENT-SEGMENTS".to_string(),
             format!("#EXT-X-TARGETDURATION:{target_duration}"),
             format!("#EXT-X-MEDIA-SEQUENCE:{}", live_segments[0].sequence),
+            "#EXT-X-DISCONTINUITY".to_string(),
         ];
         {
             let mut state = self.state.lock().await;
