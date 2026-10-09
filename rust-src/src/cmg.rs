@@ -1457,7 +1457,7 @@ fn cmg_now_ms(state: &CmgState) -> f64 {
 }
 
 fn cmg_live8_only() -> bool {
-    std::env::var_os("CMG_LIVE8_ONLY").is_some()
+    true
 }
 
 fn trace_live_input_len_matches(len: usize) -> bool {
