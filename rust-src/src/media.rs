@@ -289,10 +289,30 @@ impl MediaPipeline {
         }
 
         let processed = self
-            .process_segment_payload_locked(&mut runtime, segment)
+            .process_segment_payload_locked(&mut runtime, segment.clone())
             .await?;
-        Ok(processed.bytes)
-    }
+        let bytes = processed.bytes.clone();
+
+        let self_clone = self.clone();
+        let runtime_clone = runtime.clone();
+        let next_seq = segment.sequence + 1;
+        let livepid = segment.livepid.clone();
+        tokio::spawn(async move {
+            let next_segment = {
+                let state = self_clone.state.lock().await;
+                state.history.get(&livepid).and_then(|hist| {
+                    hist.iter().find(|s| s.sequence == next_seq).cloned()
+                })
+            };
+            if let Some(next_seg) = next_segment {
+                let mut rt = runtime_clone.lock().await;
+                if !rt.processed.contains_key(&next_seg.sequence) {
+                    let _ = self_clone.process_segment_payload_locked(&mut rt, next_seg).await;
+                }
+            }
+        });
+
+        Ok(bytes)
 
     async fn process_segment_payload_locked(
         &self,
