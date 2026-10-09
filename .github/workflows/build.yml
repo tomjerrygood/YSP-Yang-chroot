@@ -1,5 +1,4 @@
-name: Build armv7 Binary
-
+name: Build MultiArch Binary
 on:
   push:
     branches: [ main ]
@@ -8,6 +7,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - { rust_target: armv7-unknown-linux-musleabihf, arch_name: armv7 }
+          - { rust_target: aarch64-unknown-linux-musl, arch_name: aarch64 }
+          - { rust_target: x86_64-unknown-linux-musl, arch_name: x64 }
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,21 +24,21 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: armv7-unknown-linux-musleabihf
+          targets: ${{ matrix.target.rust_target }}
 
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Build armv7 binary with cross
-        run: cross build --target armv7-unknown-linux-musleabihf --release --manifest-path rust-src/Cargo.toml
+      - name: Build ${{ matrix.target.arch_name }} binary with cross
+        run: cross build --target ${{ matrix.target.rust_target }} --release --manifest-path rust-src/Cargo.toml
 
       - name: Prepare artifact
         run: |
           mkdir -p dist
-          cp rust-src/target/armv7-unknown-linux-musleabihf/release/iptv-rust dist/YSP-Yang
+          cp rust-src/target/${{ matrix.target.rust_target }}/release/iptv-rust dist/YSP-Yang-${{ matrix.target.arch_name }}
 
-      - name: Upload armv7 binary artifact
+      - name: Upload ${{ matrix.target.arch_name }} binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: YSP-Yang-armv7
-          path: dist/YSP-Yang
+          name: YSP-Yang-${{ matrix.target.arch_name }}
+          path: dist/YSP-Yang-${{ matrix.target.arch_name }}
