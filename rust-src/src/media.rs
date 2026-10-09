@@ -26,7 +26,7 @@ use crate::{
     },
     live::LiveClient,
     prefix::{abs_url, append_recursive_prefix},
-    ts_remux::{decrypt_and_remux_ts, CmgVideoState, RemuxStats, TsMuxState},
+    ts_decrypt::{decrypt_ts_segment, TsDecryptStats},
 };
 
 #[derive(Clone)]
@@ -57,8 +57,6 @@ struct ChannelRuntime {
     media_tag_id: String,
     page_url: String,
     cmg: CmgRuntime,
-    video_state: CmgVideoState,
-    mux_state: TsMuxState,
     processed: HashMap<i64, ProcessedSegment>,
     last_processed_sequence: Option<i64>,
     reset_count: u64,
@@ -67,7 +65,7 @@ struct ChannelRuntime {
 #[derive(Clone)]
 struct ProcessedSegment {
     bytes: Bytes,
-    stats: RemuxStats,
+    stats: TsDecryptStats,
 }
 
 #[derive(Serialize)]
@@ -82,7 +80,7 @@ struct SegmentDumpMeta<'a> {
     reset_count: u64,
     input_bytes: usize,
     output_bytes: usize,
-    stats: RemuxStats,
+    stats: TsDecryptStats,
 }
 
 #[derive(Debug)]
@@ -219,8 +217,6 @@ impl MediaPipeline {
             media_tag_id,
             page_url,
             cmg,
-            video_state: CmgVideoState::default(),
-            mux_state: TsMuxState::default(),
             processed: HashMap::new(),
             last_processed_sequence: None,
             reset_count: 0,
@@ -352,10 +348,8 @@ impl MediaPipeline {
         }
         let input = response.bytes().await?;
         let decrypt_start = std::time::Instant::now();
-        let (output, stats) = decrypt_and_remux_ts(
+        let (output, stats) = decrypt_ts_segment(
             &mut runtime.cmg,
-            &mut runtime.video_state,
-            &mut runtime.mux_state,
             &runtime.media_tag_id,
             ACTIVE_URL,
             &input,
@@ -365,7 +359,7 @@ impl MediaPipeline {
                 "decrypt TS segment sequence={} url={}",
                 segment.sequence, segment.url
             );
-            error!(error = %err_msg, "crawler: TS decryption/remux failed");
+            error!(error = %err_msg, "crawler: TS decryption failed");
             err_msg
         })?;
         let elapsed_total = start_time.elapsed().as_millis();
@@ -391,22 +385,20 @@ impl MediaPipeline {
             ch = %segment.ch,
             livepid = %segment.livepid,
             sequence = segment.sequence,
+            elapsed_total_ms = elapsed_total,
+            elapsed_decrypt_ms = elapsed_decrypt,
             input_bytes = input.len(),
             output_bytes = output.len(),
             media_tag_id = %runtime.media_tag_id,
             vmp_tag = %runtime.cmg.vmp_tag(),
-            video_pid = stats.input_video_pid,
-            audio_pid = stats.input_audio_pid,
-            video_samples = stats.video_sample_count,
-            audio_samples = stats.audio_sample_count,
+            video_pid = stats.video_pid,
             nal_count = stats.nal_count,
             decoded_nals = stats.decoded_nals,
             changed_nals = stats.changed_nals,
             changed_bytes = stats.changed_bytes,
             shorter_nals = stats.shorter_nals,
-            sps_side_effects = stats.sps_side_effects,
             reset_count = runtime.reset_count,
-            "decrypted and remuxed TS segment successfully"
+            "decrypted TS segment successfully with timing metrics"
         );
         let processed = ProcessedSegment {
             bytes: Bytes::from(output),
@@ -552,8 +544,6 @@ fn reset_runtime_locked(runtime: &mut ChannelRuntime) -> Result<()> {
     cmg.prime(&media_tag_id)?;
     runtime.media_tag_id = media_tag_id;
     runtime.cmg = cmg;
-    runtime.video_state = CmgVideoState::default();
-    runtime.mux_state = TsMuxState::default();
     runtime.processed.clear();
     runtime.last_processed_sequence = None;
     runtime.reset_count += 1;
