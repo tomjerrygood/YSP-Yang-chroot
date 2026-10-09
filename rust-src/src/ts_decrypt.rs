@@ -158,6 +158,16 @@ fn rebuild_pes(
         stats.nal_count += 1;
 
         let nal_type = data[0] & 0x1f;
+        if nal_type == 7 {
+            let mut sps_data = data.to_vec();
+            if sps_data.len() > 2 {
+                let _ = runtime.module_dec_live(media_tag_id, &sps_data, active_url)?;
+                sps_data[2] = 0;
+            }
+            rebuilt.extend_from_slice(&sps_data);
+            cursor = nal.end;
+            continue;
+        }
         if !matches!(nal_type, 1 | 5) {
             rebuilt.extend_from_slice(data);
             cursor = nal.end;
