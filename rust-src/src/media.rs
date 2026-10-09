@@ -238,6 +238,7 @@ impl MediaPipeline {
         runtime: Arc<Mutex<ChannelRuntime>>,
         segment: SegmentRef,
     ) -> Result<Bytes> {
+        let runtime_arc = runtime.clone();
         let mut runtime = runtime.lock().await;
         let sequence = segment.sequence;
         if let Some(cached) = runtime.processed.get(&sequence) {
@@ -294,7 +295,7 @@ impl MediaPipeline {
         let bytes = processed.bytes.clone();
 
         let self_clone = self.clone();
-        let runtime_clone = runtime.clone();
+        let runtime_clone = runtime_arc.clone();
         let next_seq = segment.sequence + 1;
         let livepid = segment.livepid.clone();
         tokio::spawn(async move {
