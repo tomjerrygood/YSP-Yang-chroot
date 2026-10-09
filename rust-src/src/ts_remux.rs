@@ -95,6 +95,7 @@ pub fn decrypt_and_remux_ts(
     active_url: &str,
     input: &[u8],
 ) -> Result<(Vec<u8>, RemuxStats)> {
+    runtime.update(media_tag_id)?;
     let packets = parse_ts_packets(input)?;
     let pmt_pid = find_pmt_pid(input, &packets)?;
     let streams = find_streams(input, &packets, pmt_pid)?;
@@ -169,7 +170,6 @@ fn decrypt_video_pes(
     let mut keyframe = false;
     for mut nal in nals {
         stats.nal_count += 1;
-        runtime.update(media_tag_id)?;
         match nal.nal_type {
             1 | 5 => {
                 stats.decoded_nals += 1;

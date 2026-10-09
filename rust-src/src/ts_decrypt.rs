@@ -57,6 +57,7 @@ pub fn decrypt_ts_segment(
     active_url: &str,
     input: &[u8],
 ) -> Result<(Vec<u8>, TsDecryptStats)> {
+    runtime.update(media_tag_id)?;
     let packets = parse_ts_packets(input)?;
     let video_pid = find_h264_pid(input, &packets)?;
     let mut output = input.to_vec();
@@ -155,7 +156,6 @@ fn rebuild_pes(
             continue;
         }
         stats.nal_count += 1;
-        runtime.update(media_tag_id)?;
 
         let nal_type = data[0] & 0x1f;
         if !matches!(nal_type, 1 | 5) {
