@@ -359,29 +359,27 @@ impl MediaPipeline {
             &input,
             &output,
         )?;
-        if std::env::var_os("IPTV_RUST_TRACE_SEGMENTS").is_some() {
-            info!(
-                ch = %segment.ch,
-                livepid = %segment.livepid,
-                sequence = segment.sequence,
-                input_bytes = input.len(),
-                output_bytes = output.len(),
-                media_tag_id = %runtime.media_tag_id,
-                vmp_tag = %runtime.cmg.vmp_tag(),
-                video_pid = stats.input_video_pid,
-                audio_pid = stats.input_audio_pid,
-                video_samples = stats.video_sample_count,
-                audio_samples = stats.audio_sample_count,
-                nal_count = stats.nal_count,
-                decoded_nals = stats.decoded_nals,
-                changed_nals = stats.changed_nals,
-                changed_bytes = stats.changed_bytes,
-                shorter_nals = stats.shorter_nals,
-                sps_side_effects = stats.sps_side_effects,
-                reset_count = runtime.reset_count,
-                "decrypted and remuxed TS segment"
-            );
-        }
+        info!(
+            ch = %segment.ch,
+            livepid = %segment.livepid,
+            sequence = segment.sequence,
+            input_bytes = input.len(),
+            output_bytes = output.len(),
+            media_tag_id = %runtime.media_tag_id,
+            vmp_tag = %runtime.cmg.vmp_tag(),
+            video_pid = stats.input_video_pid,
+            audio_pid = stats.input_audio_pid,
+            video_samples = stats.video_sample_count,
+            audio_samples = stats.audio_sample_count,
+            nal_count = stats.nal_count,
+            decoded_nals = stats.decoded_nals,
+            changed_nals = stats.changed_nals,
+            changed_bytes = stats.changed_bytes,
+            shorter_nals = stats.shorter_nals,
+            sps_side_effects = stats.sps_side_effects,
+            reset_count = runtime.reset_count,
+            "decrypted and remuxed TS segment successfully"
+        );
         let processed = ProcessedSegment {
             bytes: Bytes::from(output),
             stats,
