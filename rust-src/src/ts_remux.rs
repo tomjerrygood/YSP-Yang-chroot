@@ -36,6 +36,7 @@ pub struct CmgVideoState {
     live_sps_enabled: bool,
     last_sps: Option<Vec<u8>>,
     last_pps: Option<Vec<u8>>,
+    sent_sps_for_segment: bool,
 }
 
 #[derive(Debug, Default)]
@@ -96,6 +97,7 @@ pub fn decrypt_and_remux_ts(
     input: &[u8],
 ) -> Result<(Vec<u8>, RemuxStats)> {
     runtime.update(media_tag_id)?;
+    video_state.sent_sps_for_segment = false;
     let packets = parse_ts_packets(input)?;
     let pmt_pid = find_pmt_pid(input, &packets)?;
     let streams = find_streams(input, &packets, pmt_pid)?;
@@ -222,11 +224,17 @@ fn decrypt_video_pes(
     }
     let mut data = Vec::new();
     data.extend_from_slice(&[0, 0, 0, 1, 0x09, 0xf0]);
-    if let Some(sps) = &video_state.last_sps {
-        push_annex_b(&mut data, sps);
-    }
-    if let Some(pps) = &video_state.last_pps {
-        push_annex_b(&mut data, pps);
+    let prepend_sps = keyframe || !video_state.sent_sps_for_segment;
+    if prepend_sps {
+        if let Some(sps) = &video_state.last_sps {
+            push_annex_b(&mut data, sps);
+        }
+        if let Some(pps) = &video_state.last_pps {
+            push_annex_b(&mut data, pps);
+        }
+        if video_state.last_sps.is_some() {
+            video_state.sent_sps_for_segment = true;
+        }
     }
     for nal in out_nals {
         push_annex_b(&mut data, &nal.data);

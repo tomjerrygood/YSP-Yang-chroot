@@ -324,6 +324,7 @@ impl MediaPipeline {
         if let Some(cached) = runtime.processed.get(&segment.sequence) {
             return Ok(cached.clone());
         }
+        let start_time = std::time::Instant::now();
         info!(url = %segment.url, sequence = segment.sequence, ch = %segment.ch, "crawler: fetching upstream TS segment");
         let response = self
             .http
@@ -350,6 +351,7 @@ impl MediaPipeline {
             return Err(anyhow!(err_msg));
         }
         let input = response.bytes().await?;
+        let decrypt_start = std::time::Instant::now();
         let (output, stats) = decrypt_and_remux_ts(
             &mut runtime.cmg,
             &mut runtime.video_state,
@@ -366,6 +368,8 @@ impl MediaPipeline {
             error!(error = %err_msg, "crawler: TS decryption/remux failed");
             err_msg
         })?;
+        let elapsed_total = start_time.elapsed().as_millis();
+        let elapsed_decrypt = decrypt_start.elapsed().as_millis();
         dump_segment_if_enabled(
             SegmentDumpMeta {
                 ch: &segment.ch,
