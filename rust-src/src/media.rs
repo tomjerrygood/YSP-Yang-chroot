@@ -14,7 +14,7 @@ use reqwest::Client;
 use serde::Serialize;
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use url::Url;
 
 use crate::{
@@ -300,6 +300,7 @@ impl MediaPipeline {
         if let Some(cached) = runtime.processed.get(&segment.sequence) {
             return Ok(cached.clone());
         }
+        info!(url = %segment.url, sequence = segment.sequence, ch = %segment.ch, "crawler: fetching upstream TS segment");
         let response = self
             .http
             .get(&segment.url)
@@ -310,11 +311,19 @@ impl MediaPipeline {
         let status = response.status();
         if !status.is_success() {
             let bytes = response.bytes().await?;
-            return Err(anyhow!(
+            let err_msg = format!(
                 "upstream segment failed status={}: {}",
                 status.as_u16(),
                 String::from_utf8_lossy(&bytes[..bytes.len().min(300)])
-            ));
+            );
+            error!(
+                status = %status.as_u16(),
+                url = %segment.url,
+                sequence = segment.sequence,
+                error = %err_msg,
+                "crawler: upstream segment fetch failed"
+            );
+            return Err(anyhow!(err_msg));
         }
         let input = response.bytes().await?;
         let (output, stats) = decrypt_and_remux_ts(
@@ -326,10 +335,12 @@ impl MediaPipeline {
             &input,
         )
         .with_context(|| {
-            format!(
+            let err_msg = format!(
                 "decrypt TS segment sequence={} url={}",
                 segment.sequence, segment.url
-            )
+            );
+            error!(error = %err_msg, "crawler: TS decryption/remux failed");
+            err_msg
         })?;
         dump_segment_if_enabled(
             SegmentDumpMeta {
@@ -391,6 +402,7 @@ impl MediaPipeline {
     async fn fetch_media_playlist(&self, playback_url: &str) -> Result<MediaPlaylist> {
         let mut url = playback_url.to_string();
         for depth in 0..3 {
+            info!(url = %url, depth = depth, "crawler: fetching upstream media playlist (.m3u8)");
             let text = self
                 .http
                 .get(&url)

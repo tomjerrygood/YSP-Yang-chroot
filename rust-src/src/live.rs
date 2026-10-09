@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex;
-use tracing::{debug, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     config::Channel,
@@ -63,6 +63,18 @@ enum CacheLookup {
         refresh: bool,
     },
     Miss,
+}
+
+pub async fn diagnose_dns(domain: &str) {
+    match tokio::net::lookup_host(format!("{domain}:443")).await {
+        Ok(addrs) => {
+            let ips: Vec<String> = addrs.map(|a| a.ip().to_string()).collect();
+            info!(domain = %domain, ips = ?ips, "DNS resolution analysis successful");
+        }
+        Err(error) => {
+            error!(domain = %domain, error = %error, "DNS resolution analysis failed");
+        }
+    }
 }
 
 impl LiveClient {
@@ -190,6 +202,8 @@ impl LiveClient {
     }
 
     async fn fetch_source_once(&self, channel: &Channel) -> Result<SourceCacheEntry> {
+        diagnose_dns("player-api.yangshipin.cn").await;
+        info!(ch = %channel.ch, livepid = %channel.livepid, cnlid = %channel.cnlid, "crawler: fetching live info from player-api");
         let guid = generate_guid();
         let request_ts = chrono_like_unix_seconds();
         let ckey = build_ckey(&channel.cnlid, request_ts, &guid)?;
@@ -224,6 +238,7 @@ impl LiveClient {
         );
 
         let url = format!("{PLAYER_API}v1/player/get_live_info");
+        info!(url = %url, "crawler: sending get_live_info request");
         let response = self
             .http
             .post(url)
@@ -243,6 +258,12 @@ impl LiveClient {
         let headers = format!("{:?}", response.headers());
         let text = response.text().await?;
         if !status.is_success() {
+            error!(
+                status = %status.as_u16(),
+                headers = %headers,
+                body = %text.chars().take(1000).collect::<String>(),
+                "crawler: get_live_info failed with non-success status"
+            );
             anyhow::bail!(
                 "get_live_info failed status={} headers={} body={} body_hex={}",
                 status.as_u16(),
@@ -262,6 +283,12 @@ impl LiveClient {
         })?;
         let data = parsed.data.unwrap_or_default();
         if parsed.code != 0 || data.iretcode != 0 || data.playurl.is_empty() {
+            error!(
+                code = parsed.code,
+                iretcode = data.iretcode,
+                body = %text.chars().take(1000).collect::<String>(),
+                "crawler: get_live_info returned error code or empty playurl"
+            );
             anyhow::bail!(
                 "get_live_info failed code={} iretcode={}: {}",
                 parsed.code,
@@ -269,6 +296,7 @@ impl LiveClient {
                 text.chars().take(1000).collect::<String>()
             );
         }
+        info!("crawler: get_live_info succeeded, playback URL resolved");
 
         let now = now_epoch_ms();
         Ok(SourceCacheEntry {
@@ -298,6 +326,7 @@ impl LiveClient {
         );
         body.insert("signature".to_string(), signature);
         let url = format!("{PLAYER_API}v1/player/auth");
+        info!(url = %url, pid = %pid, "crawler: sending player auth request");
         let response = self
             .http
             .post(url)
@@ -320,6 +349,12 @@ impl LiveClient {
         })?;
         let data = parsed.data.unwrap_or_default();
         if !status.is_success() || parsed.code != 0 || data.token.is_empty() {
+            error!(
+                status = %status.as_u16(),
+                code = parsed.code,
+                body = %text.chars().take(500).collect::<String>(),
+                "crawler: player auth failed"
+            );
             anyhow::bail!(
                 "auth failed status={} code={}: {}",
                 status.as_u16(),
@@ -327,6 +362,7 @@ impl LiveClient {
                 text.chars().take(500).collect::<String>()
             );
         }
+        info!(status = %status.as_u16(), "crawler: player auth successful");
         Ok(data)
     }
 

@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
+use tracing::{error, info};
 use wasmtime::{Caller, Engine, Linker, Memory, Module, Store};
 
 use crate::{
@@ -176,6 +177,8 @@ pub async fn fetch_openapi_token(http: &Client, guid: &str) -> Result<OpenapiTok
             ("rnd", rnd.as_str()),
         ],
     )?;
+    crate::live::diagnose_dns("h5access.yangshipin.cn").await;
+    info!(url = %url, guid = %guid, "crawler: fetching openapi token from h5access");
     let response = http
         .get(url.clone())
         .header("accept", "application/json, text/plain, */*")
@@ -200,12 +203,19 @@ pub async fn fetch_openapi_token(http: &Client, guid: &str) -> Result<OpenapiTok
         .or(parsed.token)
         .unwrap_or_default();
     if !status.is_success() || token.is_empty() {
+        error!(
+            status = %status.as_u16(),
+            token_empty = token.is_empty(),
+            body = %text.chars().take(500).collect::<String>(),
+            "crawler: openapi token request failed or returned empty token"
+        );
         anyhow::bail!(
             "h5access token failed status={}: {}",
             status.as_u16(),
             text.chars().take(500).collect::<String>()
         );
     }
+    info!(status = %status.as_u16(), "crawler: openapi token fetched successfully");
     let expire = parsed.data.and_then(|data| data.expire).or(parsed.expire);
     Ok(OpenapiToken {
         status: status.as_u16(),

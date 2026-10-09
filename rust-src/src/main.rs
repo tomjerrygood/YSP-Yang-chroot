@@ -33,7 +33,7 @@ use clap::Parser;
 use serde::Serialize;
 use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     config::ChannelDirectory,
@@ -165,12 +165,17 @@ fn resolve_channels_path(path: &std::path::Path) -> PathBuf {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let filter = if args.verbose { "info" } else { "warn" };
+    let filter = if args.verbose { "debug" } else { "info" };
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| filter.into()),
         )
         .init();
+
+    info!("starting iptv-rust proxy, performing startup DNS diagnostics...");
+    for domain in &["h5access.yangshipin.cn", "player-api.yangshipin.cn", "www.yangshipin.cn"] {
+        live::diagnose_dns(domain).await;
+    }
 
     let live = LiveClient::new()?;
     let media = MediaPipeline::new(live.clone())?;
@@ -409,13 +414,26 @@ async fn notice_cached(state: &AppState, ch: &str) -> bool {
 }
 
 async fn temporary_notice(state: &AppState, ch: &str, error: anyhow::Error) -> Response {
-    warn!(channel = %ch, error = %error, "temporary notice fallback");
+    error!(
+        channel = %ch,
+        error = %error,
+        error_chain = %error_chain_str(&error),
+        "channel playback error encountered, triggering temporary notice fallback"
+    );
     let mut cache = state.notice_cache.lock().await;
     cache.insert(
         ch.to_ascii_lowercase(),
         now_ms() + NOTICE_CACHE_TTL_MS as u128,
     );
     Redirect::temporary(NOTICE_URL).into_response()
+}
+
+fn error_chain_str(error: &anyhow::Error) -> String {
+    error
+        .chain()
+        .map(|cause| cause.to_string())
+        .collect::<Vec<_>>()
+        .join("; caused by: ")
 }
 
 fn text_response(status: StatusCode, content_type: &'static str, text: String) -> Response {
