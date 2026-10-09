@@ -222,13 +222,11 @@ fn decrypt_video_pes(
     }
     let mut data = Vec::new();
     data.extend_from_slice(&[0, 0, 0, 1, 0x09, 0xf0]);
-    if keyframe {
-        if let Some(sps) = &video_state.last_sps {
-            push_annex_b(&mut data, sps);
-        }
-        if let Some(pps) = &video_state.last_pps {
-            push_annex_b(&mut data, pps);
-        }
+    if let Some(sps) = &video_state.last_sps {
+        push_annex_b(&mut data, sps);
+    }
+    if let Some(pps) = &video_state.last_pps {
+        push_annex_b(&mut data, pps);
     }
     for nal in out_nals {
         push_annex_b(&mut data, &nal.data);
