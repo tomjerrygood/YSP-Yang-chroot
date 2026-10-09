@@ -313,6 +313,7 @@ impl MediaPipeline {
         });
 
         Ok(bytes)
+    }
 
     async fn process_segment_payload_locked(
         &self,
