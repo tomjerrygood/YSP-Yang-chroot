@@ -105,15 +105,19 @@ pub fn decrypt_and_remux_ts(
         .ok_or_else(|| anyhow!("PMT did not expose H264 video PID"))?;
     let audio_pid = streams
         .iter()
-        .find(|stream| stream.stream_type == 0x0f)
-        .map(|stream| stream.pid)
-        .ok_or_else(|| anyhow!("PMT did not expose AAC audio PID"))?;
+        .find(|stream| matches!(stream.stream_type, 0x0f | 0x11 | 0x03 | 0x04 | 0x81))
+        .or_else(|| streams.iter().find(|stream| stream.pid != video_pid))
+        .map(|stream| stream.pid);
 
     let video_pes = collect_pes(input, &packets, video_pid);
-    let audio_pes = collect_pes(input, &packets, audio_pid);
+    let audio_pes = if let Some(pid) = audio_pid {
+        collect_pes(input, &packets, pid)
+    } else {
+        Vec::new()
+    };
     let mut stats = RemuxStats {
         input_video_pid: video_pid,
-        input_audio_pid: audio_pid,
+        input_audio_pid: audio_pid.unwrap_or(0),
         video_pes_count: video_pes.len(),
         audio_pes_count: audio_pes.len(),
         ..RemuxStats::default()
@@ -137,9 +141,6 @@ pub fn decrypt_and_remux_ts(
     }
     if !events.iter().any(|event| event.kind == EventKind::Video) {
         return Err(anyhow!("no video samples after TS demux"));
-    }
-    if !events.iter().any(|event| event.kind == EventKind::Audio) {
-        return Err(anyhow!("no audio samples after TS demux"));
     }
 
     let output = mux_events_to_ts(&mut events, mux_state);
@@ -171,27 +172,25 @@ fn decrypt_video_pes(
         runtime.update(media_tag_id)?;
         match nal.nal_type {
             1 | 5 => {
-                if video_state.live_sps_enabled {
-                    stats.decoded_nals += 1;
-                    let decoded = runtime.module_dec_live(media_tag_id, &nal.data, active_url)?;
-                    let diff = count_byte_diff(&nal.data, &decoded);
-                    if diff > 0 {
-                        stats.changed_nals += 1;
-                        stats.changed_bytes += diff;
-                    }
-                    if decoded.len() < nal.data.len() {
-                        stats.shorter_nals += 1;
-                    }
-                    if decoded.len() > nal.data.len() {
-                        return Err(anyhow!(
-                            "CMG output grew from {} to {} bytes for H264 NAL type {}",
-                            nal.data.len(),
-                            decoded.len(),
-                            nal.nal_type
-                        ));
-                    }
-                    nal.data = decoded;
+                stats.decoded_nals += 1;
+                let decoded = runtime.module_dec_live(media_tag_id, &nal.data, active_url)?;
+                let diff = count_byte_diff(&nal.data, &decoded);
+                if diff > 0 {
+                    stats.changed_nals += 1;
+                    stats.changed_bytes += diff;
                 }
+                if decoded.len() < nal.data.len() {
+                    stats.shorter_nals += 1;
+                }
+                if decoded.len() > nal.data.len() {
+                    return Err(anyhow!(
+                        "CMG output grew from {} to {} bytes for H264 NAL type {}",
+                        nal.data.len(),
+                        decoded.len(),
+                        nal.nal_type
+                    ));
+                }
+                nal.data = decoded;
                 if nal.nal_type == 5 {
                     keyframe = true;
                 }
@@ -199,13 +198,10 @@ fn decrypt_video_pes(
             }
             7 => {
                 if nal.data.len() > 2 {
-                    if !video_state.live_sps_enabled {
-                        let marker = nal.data[2] & 0x03;
-                        video_state.live_sps_enabled = marker == 1 || marker == 2;
-                    }
                     let _ = runtime.module_dec_live(media_tag_id, &nal.data, active_url)?;
                     nal.data[2] = 0;
                     stats.sps_side_effects += 1;
+                    video_state.live_sps_enabled = true;
                 }
                 video_state.last_sps = Some(nal.data.clone());
                 out_nals.push(nal);

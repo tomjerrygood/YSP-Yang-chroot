@@ -319,11 +319,11 @@ async fn live_playlist(
         Err(error) => return temporary_notice(&state, ch, error).await,
     };
     let Some(channel) = directory.resolve_ch(&ch) else {
-        return Redirect::temporary(NOTICE_URL).into_response();
+        return json_status(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "ok": false, "error": "unknown channel" }),
+        );
     };
-    if notice_cached(&state, &channel.ch).await {
-        return Redirect::temporary(NOTICE_URL).into_response();
-    }
     match state
         .media
         .local_ts_playlist(&channel, &headers, &uri)
@@ -413,19 +413,22 @@ async fn notice_cached(state: &AppState, ch: &str) -> bool {
     false
 }
 
-async fn temporary_notice(state: &AppState, ch: &str, error: anyhow::Error) -> Response {
+async fn temporary_notice(_state: &AppState, ch: &str, error: anyhow::Error) -> Response {
     error!(
         channel = %ch,
         error = %error,
         error_chain = %error_chain_str(&error),
-        "channel playback error encountered, triggering temporary notice fallback"
+        "channel playlist fetch error"
     );
-    let mut cache = state.notice_cache.lock().await;
-    cache.insert(
-        ch.to_ascii_lowercase(),
-        now_ms() + NOTICE_CACHE_TTL_MS as u128,
-    );
-    Redirect::temporary(NOTICE_URL).into_response()
+    json_status(
+        StatusCode::SERVICE_UNAVAILABLE,
+        serde_json::json!({
+            "ok": false,
+            "channel": ch,
+            "error": error.to_string(),
+            "error_chain": error_chain_str(&error)
+        }),
+    )
 }
 
 fn error_chain_str(error: &anyhow::Error) -> String {

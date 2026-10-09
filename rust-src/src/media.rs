@@ -252,8 +252,13 @@ impl MediaPipeline {
                     if runtime.processed.contains_key(&predecessor.sequence) {
                         continue;
                     }
-                    self.process_segment_payload_locked(&mut runtime, predecessor)
-                        .await?;
+                    if let Err(err) = self.process_segment_payload_locked(&mut runtime, predecessor).await {
+                        warn!(
+                            sequence = sequence,
+                            error = %err,
+                            "predecessor segment pre-processing warning (continuing)"
+                        );
+                    }
                 }
             }
             Some(last) if sequence < last => {
@@ -266,20 +271,16 @@ impl MediaPipeline {
                     .missing_predecessors(&segment.livepid, last + 1, sequence)
                     .await;
                 if missing.len() != (sequence - last - 1) as usize {
-                    reset_runtime_locked(&mut runtime).with_context(|| {
-                        format!("reset CMG runtime after sequence gap {last}->{sequence}")
-                    })?;
+                    let _ = reset_runtime_locked(&mut runtime);
                     for predecessor in self
                         .contiguous_predecessors(&segment.livepid, sequence)
                         .await
                     {
-                        self.process_segment_payload_locked(&mut runtime, predecessor)
-                            .await?;
+                        let _ = self.process_segment_payload_locked(&mut runtime, predecessor).await;
                     }
                 } else {
                     for predecessor in missing {
-                        self.process_segment_payload_locked(&mut runtime, predecessor)
-                            .await?;
+                        let _ = self.process_segment_payload_locked(&mut runtime, predecessor).await;
                     }
                 }
             }
@@ -611,6 +612,9 @@ fn playable_segment_window(segments: &[SegmentRef]) -> Vec<SegmentRef> {
 }
 
 fn drop_live_edge_segments(segments: &[SegmentRef], holdback: usize) -> Vec<SegmentRef> {
+    if segments.len() <= holdback + 1 {
+        return segments.to_vec();
+    }
     let keep_len = segments.len().saturating_sub(holdback);
     segments.iter().take(keep_len).cloned().collect()
 }
